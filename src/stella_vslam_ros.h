@@ -33,6 +33,7 @@ public:
     void publish_pose(const Eigen::Matrix4d& cam_pose_wc, const rclcpp::Time& stamp);
     void publish_keyframes(const rclcpp::Time& stamp);
     void setParams();
+    void getParams();
     std::shared_ptr<stella_vslam::system> slam_;
     std::shared_ptr<stella_vslam::config> cfg_;
     rclcpp::Node* node_;
@@ -50,6 +51,10 @@ public:
     std::string robot_base_frame_;
     std::string camera_frame_;
     std::string camera_optical_frame_;
+
+    std::string mono_topic_;
+    std::string left_topic_, right_topic_;
+    std::string color_topic_, depth_topic_;
     std::unique_ptr<tf2_ros::Buffer> tf_;
     std::shared_ptr<tf2_ros::TransformListener> transform_listener_;
 
@@ -119,7 +124,7 @@ public:
     void callback(const sensor_msgs::msg::Image::ConstSharedPtr& left, const sensor_msgs::msg::Image::ConstSharedPtr& right);
 
     std::shared_ptr<stella_vslam::util::stereo_rectifier> rectifier_;
-    ModifiedSubscriber<sensor_msgs::msg::Image> left_sf_, right_sf_;
+    std::unique_ptr<ModifiedSubscriber<sensor_msgs::msg::Image>> left_sf_, right_sf_;
     using ApproximateTimeSyncPolicy = message_filters::sync_policies::ApproximateTime<sensor_msgs::msg::Image, sensor_msgs::msg::Image>;
     std::shared_ptr<ApproximateTimeSyncPolicy::Sync> approx_time_sync_;
     using ExactTimeSyncPolicy = message_filters::sync_policies::ExactTime<sensor_msgs::msg::Image, sensor_msgs::msg::Image>;
@@ -134,7 +139,7 @@ public:
          const std::string& mask_img_path);
     void callback(const sensor_msgs::msg::Image::ConstSharedPtr& color, const sensor_msgs::msg::Image::ConstSharedPtr& depth);
 
-    ModifiedSubscriber<sensor_msgs::msg::Image> color_sf_, depth_sf_;
+    std::unique_ptr<ModifiedSubscriber<sensor_msgs::msg::Image>> color_sf_, depth_sf_;
     using ApproximateTimeSyncPolicy = message_filters::sync_policies::ApproximateTime<sensor_msgs::msg::Image, sensor_msgs::msg::Image>;
     std::shared_ptr<ApproximateTimeSyncPolicy::Sync> approx_time_sync_;
     using ExactTimeSyncPolicy = message_filters::sync_policies::ExactTime<sensor_msgs::msg::Image, sensor_msgs::msg::Image>;

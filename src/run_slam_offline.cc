@@ -171,9 +171,9 @@ void tracking(const std::shared_ptr<stella_vslam_ros::system>& slam_ros,
                 break;
             }
             const auto tp_1 = std::chrono::steady_clock::now();
-            stereo->left_sf_.cb(que.front());
+            stereo->left_sf_->cb(que.front());
             if (que_right.size() > 0) {
-                stereo->right_sf_.cb(que_right.front());
+                stereo->right_sf_->cb(que_right.front());
                 que_right.pop();
             }
             const auto tp_2 = std::chrono::steady_clock::now();
@@ -212,9 +212,9 @@ void tracking(const std::shared_ptr<stella_vslam_ros::system>& slam_ros,
                 break;
             }
             const auto tp_1 = std::chrono::steady_clock::now();
-            rgbd->color_sf_.cb(que.front());
+            rgbd->color_sf_->cb(que.front());
             if (que_depth.size() > 0) {
-                rgbd->depth_sf_.cb(que_depth.front());
+                rgbd->depth_sf_->cb(que_depth.front());
                 que_depth.pop();
             }
             const auto tp_2 = std::chrono::steady_clock::now();

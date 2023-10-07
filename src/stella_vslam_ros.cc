@@ -41,6 +41,7 @@ system::system(const std::shared_ptr<stella_vslam::system>& slam,
         std::bind(&system::init_pose_callback,
                   this, std::placeholders::_1));
     setParams();
+    getParams();
     rot_ros_to_cv_map_frame_ = (Eigen::Matrix3d() << 0, 0, 1,
                                 -1, 0, 0,
                                 0, -1, 0)
@@ -142,6 +143,30 @@ void system::setParams() {
 
     transform_tolerance_ = 0.5;
     transform_tolerance_ = node_->declare_parameter("transform_tolerance", transform_tolerance_);
+    node_->declare_parameter("mono_topic", rclcpp::ParameterValue(std::string("/gps_front/data")));
+    node_->declare_parameter("left_topic", rclcpp::ParameterValue(std::string("/gps_front/data")));
+    node_->declare_parameter("right_topic", rclcpp::ParameterValue(std::string("/gps_front/data")));
+    node_->declare_parameter("color_topic", rclcpp::ParameterValue(std::string("/gps_front/data")));
+    node_->declare_parameter("depth_topic", rclcpp::ParameterValue(std::string("/gps_front/data")));
+
+}
+
+void system::getParams() {
+    odom_frame_ = node_->get_parameter("odom_frame").as_string();
+    map_frame_ = node_->get_parameter("map_frame").as_string();
+    robot_base_frame_ = node_->get_parameter("robot_base_frame").as_string();
+    camera_frame_ = node_->get_parameter("camera_frame").as_string();
+
+    mono_topic_ = node_->get_parameter("mono_topic").as_string();
+    left_topic_ = node_->get_parameter("left_topic").as_string();
+    right_topic_ = node_->get_parameter("right_topic").as_string();
+    color_topic_ = node_->get_parameter("color_topic").as_string();
+    depth_topic_ = node_->get_parameter("depth_topic").as_string();
+
+    publish_tf_ = node_->get_parameter("publish_tf").as_bool();
+    odom2d_ = node_->get_parameter("odom2d").as_bool();
+    publish_keyframes_ = node_->get_parameter("publish_keyframes").as_bool();
+    transform_tolerance_ = node_->get_parameter("transform_tolerance").as_double();
 }
 
 void system::init_pose_callback(
@@ -215,8 +240,9 @@ mono::mono(const std::shared_ptr<stella_vslam::system>& slam,
            const std::string& mask_img_path)
     : system(slam, node, mask_img_path) {
     auto qos = rclcpp::QoS(rclcpp::QoSInitialization::from_rmw(custom_qos_), custom_qos_);
+
     raw_image_sub_ = node_->create_subscription<sensor_msgs::msg::Image>(
-        "camera/image_raw", qos, [this](sensor_msgs::msg::Image::UniquePtr msg_unique_ptr) { callback(std::move(msg_unique_ptr)); });
+        mono_topic_, qos, [this](sensor_msgs::msg::Image::UniquePtr msg_unique_ptr) { callback(std::move(msg_unique_ptr)); });
 }
 void mono::callback(sensor_msgs::msg::Image::UniquePtr msg_unique_ptr) {
     sensor_msgs::msg::Image::ConstSharedPtr msg = std::move(msg_unique_ptr);
@@ -272,17 +298,17 @@ stereo::stereo(const std::shared_ptr<stella_vslam::system>& slam,
                const std::string& mask_img_path,
                const std::shared_ptr<stella_vslam::util::stereo_rectifier>& rectifier)
     : system(slam, node, mask_img_path),
-      rectifier_(rectifier),
-      left_sf_(node_, "camera/left/image_raw"),
-      right_sf_(node_, "camera/right/image_raw") {
+      rectifier_(rectifier) {
+    left_sf_ = std::make_unique<ModifiedSubscriber<sensor_msgs::msg::Image>>(node_, left_topic_);
+    right_sf_ = std::make_unique<ModifiedSubscriber<sensor_msgs::msg::Image>>(node_, right_topic_);
     use_exact_time_ = false;
     use_exact_time_ = node_->declare_parameter("use_exact_time", use_exact_time_);
     if (use_exact_time_) {
-        exact_time_sync_ = std::make_shared<ExactTimeSyncPolicy::Sync>(2, left_sf_, right_sf_);
+        exact_time_sync_ = std::make_shared<ExactTimeSyncPolicy::Sync>(2, *left_sf_, *right_sf_);
         exact_time_sync_->registerCallback(&stereo::callback, this);
     }
     else {
-        approx_time_sync_ = std::make_shared<ApproximateTimeSyncPolicy::Sync>(10, left_sf_, right_sf_);
+        approx_time_sync_ = std::make_shared<ApproximateTimeSyncPolicy::Sync>(10, *left_sf_, *right_sf_);
         approx_time_sync_->registerCallback(&stereo::callback, this);
     }
 }
@@ -324,17 +350,21 @@ void stereo::callback(const sensor_msgs::msg::Image::ConstSharedPtr& left, const
 rgbd::rgbd(const std::shared_ptr<stella_vslam::system>& slam,
            rclcpp::Node* node,
            const std::string& mask_img_path)
-    : system(slam, node, mask_img_path),
-      color_sf_(node_, "camera/color/image_raw"),
-      depth_sf_(node_, "camera/depth/image_raw") {
+    : system(slam, node, mask_img_path)
+      // color_sf_(node_, "camera/color/image_raw"),
+      // depth_sf_(node_, "camera/depth/image_raw")
+{
+    color_sf_ = std::make_unique<ModifiedSubscriber<sensor_msgs::msg::Image>>(node_, color_topic_);
+    depth_sf_ = std::make_unique<ModifiedSubscriber<sensor_msgs::msg::Image>>(node_, depth_topic_);
+
     use_exact_time_ = false;
     use_exact_time_ = node_->declare_parameter("use_exact_time", use_exact_time_);
     if (use_exact_time_) {
-        exact_time_sync_ = std::make_shared<ExactTimeSyncPolicy::Sync>(2, color_sf_, depth_sf_);
+        exact_time_sync_ = std::make_shared<ExactTimeSyncPolicy::Sync>(2, *color_sf_, *depth_sf_);
         exact_time_sync_->registerCallback(&rgbd::callback, this);
     }
     else {
-        approx_time_sync_ = std::make_shared<ApproximateTimeSyncPolicy::Sync>(10, color_sf_, depth_sf_);
+        approx_time_sync_ = std::make_shared<ApproximateTimeSyncPolicy::Sync>(10, *color_sf_, *depth_sf_);
         approx_time_sync_->registerCallback(&rgbd::callback, this);
     }
 }

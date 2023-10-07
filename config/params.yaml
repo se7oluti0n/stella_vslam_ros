@@ -1,0 +1,17 @@
+run_slam:
+  ros__parameters:
+    publish_tf: true
+    odom_frame: "odom"
+    map_frame: "map"
+    robot_base_frame: "base_footprint"
+    camera_frame: "camera_frame"
+    odom2d:  true
+    publish_keyframes: true
+    transform_tolerance: 0.5
+    mono_topic: "camera/image_raw"
+    # stereo input
+    left_topic: "camera/infra1/image_rect_raw"
+    right_topic: "camera/infra2/image_rect_raw"
+    # rgbd input
+    color_topic: "camera/color/image_raw"
+    depth_topic: "camera/depth/image_raw"
