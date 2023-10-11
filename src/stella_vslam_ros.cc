@@ -46,6 +46,8 @@ system::system(const std::shared_ptr<stella_vslam::system>& slam,
                                 -1, 0, 0,
                                 0, -1, 0)
                                    .finished();
+
+    last_stamp_ = node_->now();
 }
 
 void system::publish_pose(const Eigen::Matrix4d& cam_pose_wc, const rclcpp::Time& stamp) {
@@ -58,41 +60,86 @@ void system::publish_pose(const Eigen::Matrix4d& cam_pose_wc, const rclcpp::Time
     map_to_camera_affine.prerotate(rot_ros_to_cv_map_frame_);
 
     // Create odometry message and update it with current camera pose
-    nav_msgs::msg::Odometry pose_msg;
-    pose_msg.header.stamp = stamp;
-    pose_msg.header.frame_id = map_frame_;
-    pose_msg.child_frame_id = camera_frame_;
-    pose_msg.pose.pose = tf2::toMsg(map_to_camera_affine * rot_ros_to_cv_map_frame_.inverse());
-    pose_pub_->publish(pose_msg);
+    // nav_msgs::msg::Odometry pose_msg;
+    // pose_msg.header.stamp = stamp;
+    // pose_msg.header.frame_id = odom_frame_;
+    // pose_msg.child_frame_id = camera_frame_;
+    // pose_msg.pose.pose = tf2::toMsg(map_to_camera_affine * rot_ros_to_cv_map_frame_.inverse());
+    // pose_pub_->publish(pose_msg);
 
     // Send map->odom transform. Set publish_tf to false if not using TF
-    if (publish_tf_) {
+    // if (publish_tf_) {
         try {
-            auto camera_to_odom = tf_->lookupTransform(
-                camera_optical_frame_, odom_frame_, tf2_ros::fromMsg(builtin_interfaces::msg::Time(stamp)),
+            auto camera_to_base = tf_->lookupTransform(
+                camera_optical_frame_, robot_base_frame_, tf2_ros::fromMsg(builtin_interfaces::msg::Time(stamp)),
                 tf2::durationFromSec(0.0));
-            Eigen::Affine3d camera_to_odom_affine = tf2::transformToEigen(camera_to_odom.transform);
+            Eigen::Affine3d camera_to_base_affine = tf2::transformToEigen(camera_to_base.transform);
 
-            geometry_msgs::msg::TransformStamped map_to_odom_msg;
+            geometry_msgs::msg::TransformStamped odom_to_base_msg;
             if (odom2d_) {
                 Eigen::Affine3d map_to_camera_affine_2d = project_to_xy_plane(map_to_camera_affine * rot_ros_to_cv_map_frame_.inverse()) * rot_ros_to_cv_map_frame_;
-                Eigen::Affine3d camera_to_odom_affine_2d = (project_to_xy_plane(camera_to_odom_affine.inverse() * rot_ros_to_cv_map_frame_.inverse()) * rot_ros_to_cv_map_frame_).inverse();
+                Eigen::Affine3d camera_to_odom_affine_2d = (project_to_xy_plane(camera_to_base_affine.inverse() * rot_ros_to_cv_map_frame_.inverse()) * rot_ros_to_cv_map_frame_).inverse();
                 Eigen::Affine3d map_to_odom_affine_2d = map_to_camera_affine_2d * camera_to_odom_affine_2d;
-                map_to_odom_msg = tf2::eigenToTransform(map_to_odom_affine_2d);
+                odom_to_base_msg = tf2::eigenToTransform(map_to_odom_affine_2d);
             }
             else {
-                map_to_odom_msg = tf2::eigenToTransform(map_to_camera_affine * camera_to_odom_affine);
+                odom_to_base_msg = tf2::eigenToTransform(map_to_camera_affine * camera_to_base_affine);
             }
             tf2::TimePoint transform_timestamp = tf2_ros::fromMsg(stamp) + tf2::durationFromSec(transform_tolerance_);
-            map_to_odom_msg.header.stamp = tf2_ros::toMsg(transform_timestamp);
-            map_to_odom_msg.header.frame_id = map_frame_;
-            map_to_odom_msg.child_frame_id = odom_frame_;
-            map_to_odom_broadcaster_->sendTransform(map_to_odom_msg);
+            odom_to_base_msg.header.stamp = tf2_ros::toMsg(transform_timestamp);
+            odom_to_base_msg.header.frame_id = odom_frame_;
+            odom_to_base_msg.child_frame_id = robot_base_frame_;
+            map_to_odom_broadcaster_->sendTransform(odom_to_base_msg);
+
+            nav_msgs::msg::Odometry pose_msg;
+            pose_msg.header.stamp = stamp;
+            pose_msg.header.frame_id = odom_frame_;
+            pose_msg.child_frame_id = robot_base_frame_;
+            pose_msg.pose.pose.position.x = odom_to_base_msg.transform.translation.x;
+            pose_msg.pose.pose.position.y = odom_to_base_msg.transform.translation.y;
+            pose_msg.pose.pose.position.z = odom_to_base_msg.transform.translation.z;
+
+            pose_msg.pose.pose.orientation.x = odom_to_base_msg.transform.rotation.x;
+            pose_msg.pose.pose.orientation.y = odom_to_base_msg.transform.rotation.y;
+            pose_msg.pose.pose.orientation.z = odom_to_base_msg.transform.rotation.z;
+            pose_msg.pose.pose.orientation.w = odom_to_base_msg.transform.rotation.w;
+
+            double delta = (stamp-last_stamp_).seconds();
+            if (delta < 1.0 && delta > 0.0001) {
+              // calculate twist
+              pose_msg.twist.twist.linear.x = (pose_msg.pose.pose.position.x - last_pose_.position.x) / delta;
+              pose_msg.twist.twist.linear.y = (pose_msg.pose.pose.position.y - last_pose_.position.y) / delta;
+              pose_msg.twist.twist.linear.z = (pose_msg.pose.pose.position.z - last_pose_.position.z) / delta;
+
+              Eigen::Quaterniond last_q(last_pose_.orientation.w,
+                                        last_pose_.orientation.x,
+                                        last_pose_.orientation.y,
+                                        last_pose_.orientation.z);
+
+              auto last_euler = last_q.toRotationMatrix().eulerAngles(0, 1, 2);
+
+              Eigen::Quaterniond cur_q(pose_msg.pose.pose.orientation.w,
+                                        pose_msg.pose.pose.orientation.x,
+                                        pose_msg.pose.pose.orientation.y,
+                                        pose_msg.pose.pose.orientation.z);
+
+              auto cur_euler = cur_q.toRotationMatrix().eulerAngles(0, 1, 2);
+
+              pose_msg.twist.twist.angular.x = 0;
+              pose_msg.twist.twist.angular.y = 0;
+              pose_msg.twist.twist.angular.z = (cur_euler(2) - last_euler(2)) / delta;
+
+              pose_pub_->publish(pose_msg);
+            }
+
+            last_stamp_ = stamp;
+            last_pose_ = pose_msg.pose.pose;
+
         }
         catch (tf2::TransformException& ex) {
             RCLCPP_ERROR_STREAM_THROTTLE(node_->get_logger(), *node_->get_clock(), 1000, "Transform failed: " << ex.what());
         }
-    }
+    // }
 }
 
 void system::publish_keyframes(const rclcpp::Time& stamp) {
@@ -156,6 +203,7 @@ void system::getParams() {
     map_frame_ = node_->get_parameter("map_frame").as_string();
     robot_base_frame_ = node_->get_parameter("robot_base_frame").as_string();
     camera_frame_ = node_->get_parameter("camera_frame").as_string();
+    camera_optical_frame_ = camera_frame_;
 
     mono_topic_ = node_->get_parameter("mono_topic").as_string();
     left_topic_ = node_->get_parameter("left_topic").as_string();

@@ -18,7 +18,7 @@ def generate_launch_description():
 
   stella_vslam_ros_dir = get_package_share_directory('stella_vslam_ros')
   param_file = os.path.join(stella_vslam_ros_dir, 'config', 'params.yaml')
-  config_file = os.path.join(stella_vslam_ros_dir, 'config', 'd455.yaml')
+  config_file = os.path.join(stella_vslam_ros_dir, 'config', 'gazebo.yaml')
   bow_file = os.path.join(stella_vslam_ros_dir, 'config', 'orb_vocab.fbow')
 
   run_vslam = Node(
@@ -26,7 +26,8 @@ def generate_launch_description():
     executable='run_slam',
     output='screen',
     parameters=[param_file, {'use_sim_time': use_sim_time}],
-    arguments=["-v", bow_file, "-c", config_file]
+    arguments=["-v", bow_file, "-c", config_file],
+    # prefix=['gnome-terminal -- gdb -ex=r --args'],
   )
 
 

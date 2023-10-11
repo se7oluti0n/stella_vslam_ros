@@ -23,6 +23,7 @@
 #include <opencv2/core/core.hpp>
 #include <sensor_msgs/msg/image.hpp>
 #include <geometry_msgs/msg/pose_with_covariance_stamped.hpp>
+#include <geometry_msgs/msg/pose.hpp>
 
 namespace stella_vslam_ros {
 class system {
@@ -69,6 +70,9 @@ public:
 
     // If true, odom_frame is fixed on the xy-plane of map_frame. This is useful when working with 2D navigation modules.
     bool odom2d_;
+
+    rclcpp::Time last_stamp_;
+    geometry_msgs::msg::Pose last_pose_;
 
 private:
     void init_pose_callback(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg);
