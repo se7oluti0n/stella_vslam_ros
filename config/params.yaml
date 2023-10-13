@@ -15,3 +15,4 @@ run_slam:
     # rgbd input
     color_topic: "camera/color/image_raw"
     depth_topic: "camera/depth/image_raw"
+

@@ -26,7 +26,7 @@ def generate_launch_description():
     executable='run_slam',
     output='screen',
     parameters=[param_file, {'use_sim_time': use_sim_time}],
-    arguments=["-v", bow_file, "-c", config_file],
+    arguments=["-v", bow_file, "-c", config_file, "--temporal_mapping"],
     # prefix=['gnome-terminal -- gdb -ex=r --args'],
   )
 

@@ -29,7 +29,8 @@ system::system(const std::shared_ptr<stella_vslam::system>& slam,
                const std::string& mask_img_path)
     : slam_(slam), node_(node), custom_qos_(rmw_qos_profile_sensor_data),
       mask_(mask_img_path.empty() ? cv::Mat{} : cv::imread(mask_img_path, cv::IMREAD_GRAYSCALE)),
-      pose_pub_(node_->create_publisher<nav_msgs::msg::Odometry>("~/camera_pose", 1)),
+      pose_pub_(node_->create_publisher<nav_msgs::msg::Odometry>("/odom", 1)),
+      loc_pose_pub_(node_->create_publisher<geometry_msgs::msg::PoseStamped>("/loc_pose", 1)),
       keyframes_pub_(node_->create_publisher<geometry_msgs::msg::PoseArray>("~/keyframes", 1)),
       keyframes_2d_pub_(node_->create_publisher<geometry_msgs::msg::PoseArray>("~/keyframes_2d", 1)),
       map_to_odom_broadcaster_(std::make_shared<tf2_ros::TransformBroadcaster>(node_)),
@@ -134,6 +135,26 @@ void system::publish_pose(const Eigen::Matrix4d& cam_pose_wc, const rclcpp::Time
 
             last_stamp_ = stamp;
             last_pose_ = pose_msg.pose.pose;
+
+            auto map_to_odom = tf_->lookupTransform(
+                map_frame_, odom_frame_, tf2::TimePointZero,
+                tf2::durationFromSec(0.0));
+            Eigen::Affine3d map_to_odom_affine = tf2::transformToEigen(map_to_odom.transform);
+            Eigen::Affine3d odom_to_base_affine = tf2::transformToEigen(odom_to_base_msg);
+
+            Eigen::Affine3d map_to_base_affine = map_to_odom_affine * odom_to_base_affine;
+
+            geometry_msgs::msg::TransformStamped loc_pose_transform = tf2::eigenToTransform(map_to_base_affine);
+            geometry_msgs::msg::PoseStamped loc_pose_msg;
+            loc_pose_msg.pose.orientation = loc_pose_transform.transform.rotation;
+            loc_pose_msg.pose.position.x = loc_pose_transform.transform.translation.x;
+            loc_pose_msg.pose.position.y = loc_pose_transform.transform.translation.y;
+            loc_pose_msg.pose.position.z = loc_pose_transform.transform.translation.z;
+
+            loc_pose_msg.header = odom_to_base_msg.header;
+            loc_pose_msg.header.frame_id = map_frame_;
+
+            loc_pose_pub_->publish(loc_pose_msg);
 
         }
         catch (tf2::TransformException& ex) {
